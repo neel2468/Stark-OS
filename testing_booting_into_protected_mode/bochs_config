@@ -1,0 +1,7 @@
+megs: 128
+romimage: file=/opt/homebrew/Cellar/bochs/3.0/share/bochs/BIOS-bochs-legacy, address=0xffff0000
+vgaromimage: file=/opt/homebrew/Cellar/bochs/3.0/share/bochs/VGABIOS-lgpl-latest.bin
+floppya: 1_44=build/floppy.img, status=inserted
+boot: floppy
+mouse: enabled=0
+display_library: sdl2
