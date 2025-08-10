@@ -1,196 +1,142 @@
-bits 16
+%macro x86_EnterRealMode 0
+    [bits 32]
+    jmp word 18h: .pmode16      ;1 - jmp to 16-bit protected mode
 
-section _TEXT class=CODE
+.pmode16:
+    [bits 16]
+    ;2 - disable protected mode bit in cr0
+    mov eax,cr0
+    and al, ~1
+    mov cr0,eax
+
+    ;3 - jmp to real mode
+    jmp word 00h: .rmode
+
+.rmode:
+    ;4-setup segments
+    mov ax,0
+    mov ds,ax
+    mov ss,ax
+
+    ;5 - enable interrupts
+    sti
+%endmacro
+
+%macro x86_EnterProtectedMode 0
+    cli
+
+    ;4 - set protection enable flag in CR0
+    mov eax,cr0
+    or al,1
+    mov cr0,eax
+
+    jmp dword 08h: .pmode
+
+.pmode:
+    ;we are now in protected mode
+    [bits 32]
+    ;setup segment registers
+    mov ax,0x10
+    mov ds,ax
+    mov ss,ax
 
 
-;
-; U4D
-;
-; Operation:      Unsigned 4 byte divide
-; Inputs:         DX;AX   Dividend
-;                 CX;BX   Divisor
-; Outputs:        DX;AX   Quotient
-;                 CX;BX   Remainder
-; Volatile:       none
-;
-global __U4D
-__U4D:
-    shl edx, 16         ; dx to upper half of edx
-    mov dx, ax          ; edx - dividend
-    mov eax, edx        ; eax - dividend
-    xor edx, edx
+%endmacro
 
-    shl ecx, 16         ; cx to upper half of ecx
-    mov cx, bx          ; ecx - divisor
+;Convert linear address to segment:offset address
+;Args;
+;1 - linear address
+;2 - (out) target segment (e.g. es)
+;3 - target 32-bit register to use (e.g. eax)
+;4 - target lower 16-bit half of #3 (e.g. ax)
 
-    div ecx             ; eax - quot, edx - remainder
-    mov ebx, edx
-    mov ecx, edx
-    shr ecx, 16
+%macro LinearToSegOffset 4
+    mov %3, %1   ;linear address to eax
+    shr %3,4     ;divide by 16 to get segment
+    mov %2, %4   ; move lower bits of %3 into segment register
+    mov %3, %1   ; reload linear address again into %3
+    and %3, 0xF  ; mask to get offset within segment
 
-    mov edx, eax
-    shr edx, 16
+%endmacro
 
+
+global x86_outb
+x86_outb:
+    [bits 32]
+    mov dx, [esp + 4]
+    mov al, [esp + 8]
+    out dx, al
+    ret
+
+global x86_inb
+x86_inb:
+    [bits 32]
+    mov dx, [esp + 4]
+    xor eax,eax
+    in al, dx
     ret
 
 
-;
-; U4M
-; Operation:      integer four byte multiply
-; Inputs:         DX;AX   integer M1
-;                 CX;BX   integer M2
-; Outputs:        DX;AX   product
-; Volatile:       CX, BX destroyed
-;
-global __U4M
-__U4M:
-    shl edx, 16         ; dx to upper half of edx
-    mov dx, ax          ; m1 in edx
-    mov eax, edx        ; m1 in eax
 
-    shl ecx, 16         ; cx to upper half of ecx
-    mov cx, bx          ; m2 in ecx
-
-    mul ecx             ; result in edx:eax (we only need eax)
-    mov edx, eax        ; move upper half to dx
-    shr edx, 16
-
-    ret
-
-;
-; void _cdecl x86_div64_32(uint64_t dividend, uint32_t divisor, uint64_t* quotientOut, uint32_t* remainderOut);
-;
-global _x86_div64_32
-_x86_div64_32:
-
+global x86_Disk_Reset
+x86_Disk_Reset:
+    [bits 32]
     ; make new call frame
-    push bp             ; save old call frame
-    mov bp, sp          ; initialize new call frame
+    push ebp              ; save old call frame
+    mov ebp, esp          ; initialize new call frame
 
-    push bx
-
-    ; divide upper 32 bits
-    mov eax, [bp + 8]   ; eax <- upper 32 bits of dividend
-    mov ecx, [bp + 12]  ; ecx <- divisor
-    xor edx, edx
-    div ecx             ; eax - quot, edx - remainder
-
-    ; store upper 32 bits of quotient
-    mov bx, [bp + 16]
-    mov [bx + 4], eax
-
-    ; divide lower 32 bits
-    mov eax, [bp + 4]   ; eax <- lower 32 bits of dividend
-                        ; edx <- old remainder
-    div ecx
-
-    ; store results
-    mov [bx], eax
-    mov bx, [bp + 18]
-    mov [bx], edx
-
-    pop bx
-
-    ; restore old call frame
-    mov sp, bp
-    pop bp
-    ret
-
-;
-; int 10h ah=0Eh
-; args: character, page
-;
-global _x86_Video_WriteCharTeletype
-_x86_Video_WriteCharTeletype:
-    
-    ; make new call frame
-    push bp             ; save old call frame
-    mov bp, sp          ; initialize new call frame
-
-    ; save bx
-    push bx
-
-    ; [bp + 0] - old call frame
-    ; [bp + 2] - return address (small memory model => 2 bytes)
-    ; [bp + 4] - first argument (character)
-    ; [bp + 6] - second argument (page)
-    ; note: bytes are converted to words (you can't push a single byte on the stack)
-    mov ah, 0Eh
-    mov al, [bp + 4]
-    mov bh, [bp + 6]
-
-    int 10h
-
-    ; restore bx
-    pop bx
-
-    ; restore old call frame
-    mov sp, bp
-    pop bp
-    ret
-
-
-;
-; bool _cdecl x86_Disk_Reset(uint8_t drive);
-;
-global _x86_Disk_Reset
-_x86_Disk_Reset:
-
-    ; make new call frame
-    push bp             ; save old call frame
-    mov bp, sp          ; initialize new call frame
+    x86_EnterRealMode
 
     mov ah, 0
-    mov dl, [bp + 4]    ; dl - drive
+    mov dl, [bp + 8]    ; dl - drive
     stc
     int 13h
 
-    mov ax, 1
-    sbb ax, 0           ; 1 on success, 0 on fail   
+    mov eax, 1
+    sbb eax, 0           ; 1 on success, 0 on fail 
+
+    push eax
+
+    x86_EnterProtectedMode
+
+    pop eax  
 
     ; restore old call frame
-    mov sp, bp
-    pop bp
+    mov esp, ebp
+    pop ebp
     ret
 
 
-;
-; bool _cdecl x86_Disk_Read(uint8_t drive,
-;                           uint16_t cylinder,
-;                           uint16_t sector,
-;                           uint16_t head,
-;                           uint8_t count,
-;                           void far * dataOut);
-;
-global _x86_Disk_Read
-_x86_Disk_Read:
 
+global x86_Disk_Read
+x86_Disk_Read:
+    [bits 32]
     ; make new call frame
-    push bp             ; save old call frame
-    mov bp, sp          ; initialize new call frame
+    push ebp              ; save old call frame
+    mov ebp, esp          ; initialize new call frame
+
+    x86_EnterRealMode
 
     ; save modified regs
-    push bx
+    push ebx
     push es
 
     ; setup args
-    mov dl, [bp + 4]    ; dl - drive
+    mov dl, [bp + 8]    ; dl - drive
 
-    mov ch, [bp + 6]    ; ch - cylinder (lower 8 bits)
-    mov cl, [bp + 7]    ; cl - cylinder to bits 6-7
+    mov ch, [bp + 12]    ; ch - cylinder (lower 8 bits)
+    mov cl, [bp + 13]    ; cl - cylinder to bits 6-7
     shl cl, 6
     
-    mov al, [bp + 8]    ; cl - sector to bits 0-5
+    mov al, [bp + 16]    ; cl - sector to bits 0-5
     and al, 3Fh
     or cl, al
 
-    mov dh, [bp + 10]   ; dh - head
+    mov dh, [bp + 20]   ; dh - head
 
-    mov al, [bp + 12]   ; al - count
+    mov al, [bp + 24]   ; al - count
 
-    mov bx, [bp + 16]   ; es:bx - far pointer to data out
-    mov es, bx
-    mov bx, [bp + 14]
+    LinearToSegOffset [bp+28], es, ebx, bx
 
     ; call int13h
     mov ah, 02h
@@ -198,12 +144,18 @@ _x86_Disk_Read:
     int 13h
 
     ; set return value
-    mov ax, 1
-    sbb ax, 0           ; 1 on success, 0 on fail   
+    mov eax, 1
+    sbb eax, 0           ; 1 on success, 0 on fail   
 
     ; restore regs
     pop es
-    pop bx
+    pop ebx
+
+    push eax
+
+    x86_EnterProtectedMode
+
+    pop eax
 
     ; restore old call frame
     mov sp, bp
@@ -211,28 +163,24 @@ _x86_Disk_Read:
     ret
 
 
-;
-; bool _cdecl x86_Disk_GetDriveParams(uint8_t drive,
-;                                     uint8_t* driveTypeOut,
-;                                     uint16_t* cylindersOut,
-;                                     uint16_t* sectorsOut,
-;                                     uint16_t* headsOut);
-;
-global _x86_Disk_GetDriveParams
-_x86_Disk_GetDriveParams:
 
+global x86_Disk_GetDriveParams
+x86_Disk_GetDriveParams:
+    [bits 32]
     ; make new call frame
-    push bp             ; save old call frame
-    mov bp, sp          ; initialize new call frame
+    push ebp             ; save old call frame
+    mov ebp, esp         ; initialize new call frame
+
+    x86_EnterRealMode
 
     ; save regs
     push es
     push bx
-    push si
+    push esi
     push di
 
     ; call int13h
-    mov dl, [bp + 4]    ; dl - disk drive
+    mov dl, [bp + 8]    ; dl - disk drive
     mov ah, 08h
     mov di, 0           ; es:di - 0000:0000
     mov es, di
@@ -240,35 +188,44 @@ _x86_Disk_GetDriveParams:
     int 13h
 
     ; return
-    mov ax, 1
-    sbb ax, 0
+    mov eax, 1
+    sbb eax, 0
 
     ; out params
-    mov si, [bp + 6]    ; drive type from bl
-    mov [si], bl
+    LinearToSegOffset [bp+12], es, esi, si
+    mov [es:si], bl
 
     mov bl, ch          ; cylinders - lower bits in ch
     mov bh, cl          ; cylinders - upper bits in cl (6-7)
     shr bh, 6
-    mov si, [bp + 8]
-    mov [si], bx
+    inc bx
+   
+    LinearToSegOffset [bp+16], es, esi, si
+    mov [es:si], bx
 
     xor ch, ch          ; sectors - lower 5 bits in cl
     and cl, 3Fh
-    mov si, [bp + 10]
-    mov [si], cx
+    LinearToSegOffset [bp + 20], es, esi, si
+    mov [es:si], cx
 
     mov cl, dh          ; heads - dh
-    mov si, [bp + 12]
-    mov [si], cx
+    inc cx
+    LinearToSegOffset [bp+24], es, esi, si
+    mov [es:si], cx
 
     ; restore regs
     pop di
-    pop si
+    pop esi
     pop bx
     pop es
 
+    push eax
+
+    x86_EnterProtectedMode
+
+    pop eax
+
     ; restore old call frame
-    mov sp, bp
-    pop bp
+    mov esp, ebp
+    pop ebp
     ret
