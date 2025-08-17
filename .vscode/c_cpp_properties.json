@@ -4,6 +4,7 @@
             "name": "gcc-x86",
             "includePath": [
                 "${workspaceFolder}/**",
+                "${workspaceFolder}/src/kernel",
                 "/Users/neelpatel/OS-DEV-Toolchain/i686-elf/bin/../lib/gcc/i686-elf/15.1.0/include",
                 "/Users/neelpatel/OS-DEV-Toolchain/i686-elf/bin/../lib/gcc/i686-elf/15.1.0/include-fixed"
             ],
