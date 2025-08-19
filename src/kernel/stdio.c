@@ -1,4 +1,4 @@
-#include "stdio.h"
+#include <stdio.h>
 #include <arch/i686/io.h>
 
 #include <stdarg.h>
@@ -290,6 +290,7 @@ void printf(const char* fmt, ...)
                 length = PRINTF_LENGTH_DEFAULT;
                 radix = 10;
                 sign = false;
+                number = false;
                 break;
         }
 
