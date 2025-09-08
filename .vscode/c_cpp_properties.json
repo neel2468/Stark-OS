@@ -5,13 +5,13 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/src/kernel",
-                "/Users/neelpatel/OS-DEV-Toolchain/i686-elf/bin/../lib/gcc/i686-elf/15.1.0/include",
-                "/Users/neelpatel/OS-DEV-Toolchain/i686-elf/bin/../lib/gcc/i686-elf/15.1.0/include-fixed"
+                "/home/neelpatel/Coding/Stark-OS/toolchain/i686-elf/bin/../lib/gcc/i686-elf/15.1.0/include",
+                "/home/neelpatel/Coding/Stark-OS/toolchain/i686-elf/bin/../lib/gcc/i686-elf/15.1.0/include-fixed"
             ],
             "defines": [
                 
             ],
-            "compilerPath": "/Users/neelpatel/OS-DEV-Toolchain/i686-elf/bin/i686-elf-gcc",
+            "compilerPath": "/home/neelpatel/Coding/Stark-OS/toolchain/i686-elf/bin/i686-elf-gcc",
             "cStandard": "c99",
             "cppStandard": "c++14",
             "intelliSenseMode": "gcc-x86",

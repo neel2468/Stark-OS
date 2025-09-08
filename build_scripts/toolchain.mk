@@ -18,7 +18,7 @@ $(TOOLCHAIN_PREFIX)/bin/i686-elf-ld: $(BINUTILS_SRC).tar.xz
 		--with-sysroot					\
 		--disable-nls					\
 		--disable-werror
-	$(MAKE) -j8 -C $(BINUTILS_BUILD)
+	$(MAKE) -j4 -C $(BINUTILS_BUILD)
 	$(MAKE) -C $(BINUTILS_BUILD) install
 
 $(BINUTILS_SRC).tar.xz:
