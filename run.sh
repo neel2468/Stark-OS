@@ -1,1 +1,2 @@
-qemu-system-i386 -fda build/main_floppy.img
+sudo chown $USER:$USER build/main_disk.raw
+qemu-system-i386 -hda build/main_disk.raw
