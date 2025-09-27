@@ -9,9 +9,7 @@ export ASM = nasm
 export LINKFLAGS =
 export LIBS =
 
-export TARGET = i686-elf
-export TARGET_ASM = nasm
-export TARGET_ASMFLAGS =
+export TARGET = x86_64-elf
 export TARGET_CFLAGS = -std=c99 -g #-O2
 export TARGET_CC = $(TARGET)-gcc
 export TARGET_CXX = $(TARGET)-g++
