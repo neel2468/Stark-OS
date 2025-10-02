@@ -18,7 +18,8 @@ $(TOOLCHAIN_PREFIX)/bin/$(TARGET)-ld: $(BINUTILS_SRC).tar.xz
 		--with-sysroot \
 		--disable-nls \
 		--disable-werror \
-		--enable-targets=$(TARGET),x86_64-pep
+		--enable-targets=x86_64-elf,x86_64-pe \
+		--enable-64-bit-bfd
 	$(MAKE) -j4 -C $(BINUTILS_BUILD)
 	$(MAKE) -C $(BINUTILS_BUILD) install
 

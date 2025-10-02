@@ -1,67 +1,80 @@
 #!/bin/bash
-
 set -e
 
-TARGET=$1
-SIZE=$2
-BUILD_DIR=$3
+OUTPUT_IMAGE="$1"
+DISK_SIZE="$2"
+BUILD_DIR="$3"
 
-STAGE1_STAGE2_LOCATION_OFFSET=480
+echo "=== Creating UEFI Bootable Disk Image ==="
+echo "Output: $OUTPUT_IMAGE"
+echo "Size: ${DISK_SIZE}MB"
+echo "Build dir: $BUILD_DIR"
 
-DISK_SECTOR_COUNT=$(( (${SIZE} + 511) / 512 ))
+# Remove old image
+rm -f "$OUTPUT_IMAGE"
 
-DISK_PART1_BEGIN=2048
-DISK_PART1_END=$(( ${DISK_SECTOR_COUNT} - 1 ))
+# Create empty disk image
+dd if=/dev/zero of="$OUTPUT_IMAGE" bs=1M count="$DISK_SIZE" status=progress
 
-#generate image file
-echo "Generating disk image ${TARGET} (${DISK_SECTOR_COUNT} sectors)..."
-dd if=/dev/zero of=$TARGET bs=512 count=${DISK_SECTOR_COUNT} >/dev/null
+# Create GPT partition table with ESP
+echo "Creating GPT partition table..."
+parted "$OUTPUT_IMAGE" -s mklabel gpt
+parted "$OUTPUT_IMAGE" -s mkpart primary fat32 2048s 100%
+parted "$OUTPUT_IMAGE" -s set 1 esp on
 
-#create partition table
-parted -s $TARGET mklabel msdos
-parted -s $TARGET mkpart primary ${DISK_PART1_BEGIN}s ${DISK_PART1_END}s
-parted -s $TARGET set 1 boot on
+# Setup loop device
+echo "Setting up loop device..."
+LOOP_DEVICE=$(sudo losetup --partscan --find --show "$OUTPUT_IMAGE")
+echo "Loop device: $LOOP_DEVICE"
 
-sync
+# Wait for partition to appear
+sleep 1
 
-STAGE2_SIZE=$(stat -c%s ${BUILD_DIR}/stage2.bin)
-echo ${STAGE2_SIZE}
-STAGE2_SECTORS=$(( (${STAGE2_SIZE} + 511) / 512 ))
-echo ${STAGE2_SECTORS}
+# Format ESP as FAT32
+echo "Formatting ESP partition..."
+sudo mkfs.fat -F 32 "${LOOP_DEVICE}p1"
 
-if [ ${STAGE2_SECTORS} -gt $(( ${DISK_PART1_BEGIN} - 1 )) ]; then
-    echo "Stage 2 too big!!"
-    exit 2
+# Mount ESP
+MOUNT_POINT=$(mktemp -d)
+sudo mount "${LOOP_DEVICE}p1" "$MOUNT_POINT"
+
+# Create EFI directory structure
+echo "Creating EFI directory structure..."
+sudo mkdir -p "$MOUNT_POINT/EFI/BOOT"
+
+# Copy bootloader
+if [ -f "$BUILD_DIR/bootloader.efi" ]; then
+    sudo cp "$BUILD_DIR/bootloader.efi" "$MOUNT_POINT/EFI/BOOT/BOOTX64.EFI"
+    echo "✓ Copied: bootloader.efi -> BOOTX64.EFI"
+else
+    echo "ERROR: $BUILD_DIR/bootloader.efi not found!"
+    sudo umount "$MOUNT_POINT"
+    sudo losetup -d "$LOOP_DEVICE"
+    rmdir "$MOUNT_POINT"
+    exit 1
 fi
 
-dd if=${BUILD_DIR}/stage2.bin of=$TARGET conv=notrunc bs=512 seek=1 >/dev/null
+# Copy kernel if exists
+if [ -f "$BUILD_DIR/kernel.bin" ]; then
+    sudo cp "$BUILD_DIR/kernel.bin" "$MOUNT_POINT/kernel.bin"
+    echo "✓ Copied: kernel.bin"
+fi
 
-#create loopback device
-DEVICE=$(losetup -fP --show ${TARGET})
-echo "Created loopback device ${DEVICE}"
-TARGET_PARTITION="${DEVICE}p1"
+# List contents
+echo ""
+echo "=== Disk Image Contents ==="
+sudo find "$MOUNT_POINT" -type f -exec ls -lh {} \;
+echo ""
 
-#create file system
-echo "Formatting ${TARGET_PARTITION}..."
-mkfs.fat -n "NBOS" $TARGET_PARTITION >/dev/null
+# Verify bootloader
+echo "=== Bootloader Verification ==="
+sudo file "$MOUNT_POINT/EFI/BOOT/BOOTX64.EFI"
 
-#install bootloader
-echo "Installing bootloader on ${TARGET_PARTITION}..."
-dd if=${BUILD_DIR}/stage1.bin of=$TARGET_PARTITION conv=notrunc bs=1 count=3 2>&1 >/dev/null
-dd if=${BUILD_DIR}/stage1.bin of=$TARGET_PARTITION conv=notrunc bs=1 seek=90 skip=90 2>&1 >/dev/null
+# Cleanup
+echo ""
+echo "Cleaning up..."
+sudo umount "$MOUNT_POINT"
+sudo losetup -d "$LOOP_DEVICE"
+rmdir "$MOUNT_POINT"
 
-#write lba address of stage2 to bootloader
-echo "01 00 00 00" | xxd -r -p | dd of=$TARGET_PARTITION conv=notrunc bs=1 seek=$STAGE1_STAGE2_LOCATION_OFFSET
-printf "%x" ${STAGE2_SECTORS} | xxd -r -p | dd of=$TARGET_PARTITION conv=notrunc bs=1 seek=$(( $STAGE1_STAGE2_LOCATION_OFFSET + 4 ))
-
-
-#copy files
-echo "Copying files to ${TARGET_PARTITION} (mounted on /tmp/nbos)"
-mkdir -p /tmp/nbos
-mount $TARGET_PARTITION /tmp/nbos
-cp ${BUILD_DIR}/kernel.bin /tmp/nbos
-umount /tmp/nbos
-
-#destroy loopback
-losetup -d ${DEVICE}
-
+echo "✓ Disk image created successfully: $OUTPUT_IMAGE"
