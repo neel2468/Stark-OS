@@ -7,12 +7,13 @@ pub mod graphics {
     pub mod vga_driver;
 }
 
-
-
-
 mod interrupts {
     pub mod gdt;
     pub mod idt;
+}
+
+pub mod memory {
+    pub mod mem;
 }
 
 pub fn init() {
